@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Yandex Maps Minimal UI</title>
+    <script src="https://api-maps.yandex.ru/2.1/?apikey=d9f2a94a-ac03-471a-af55-5abc10ff5ace&lang=ru_RU" type="text/javascript"></script>
+    
+    <style>
+        :root {
+            --accent: #4A90E2;
+            --glass: rgba(255, 255, 255, 0.8);
+            --shadow: 0 8px 32px rgba(0,0,0,0.12);
+        }
+
+        body, html { width: 100%; height: 100%; margin: 0; padding: 0; overflow: hidden; background: #000; }
+        
+        #map { width: 100%; height: 100%; position: absolute; z-index: 1; }
+        #panorama { 
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%; 
+            z-index: 100; display: none; opacity: 0; 
+            transition: opacity 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        #panorama.active { display: block; opacity: 1; }
+
+        /* Группировка кнопок справа снизу */
+        .controls-cluster {
+            position: absolute;
+            bottom: 30px;
+            right: 20px;
+            z-index: 1000;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        /* Общий стиль кнопок в стиле Figma */
+        .action-btn {
+            width: 56px;
+            height: 56px;
+            border-radius: 18px;
+            border: none;
+            background: var(--glass);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            box-shadow: var(--shadow);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        .action-btn svg {
+            width: 24px;
+            height: 24px;
+            fill: none;
+            stroke: #333;
+            stroke-width: 2;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+            transition: transform 0.4s;
+        }
+
+        /* Состояние активной кнопки (Панорама открыта) */
+        .action-btn.active {
+            background: #333;
+            transform: scale(1.1);
+        }
+        .action-btn.active svg {
+            stroke: #fff;
+            transform: rotate(90deg);
+        }
+
+        /* Эффект нажатия */
+        .action-btn:active { transform: scale(0.9); }
+
+        /* Иконка GPS */
+        #gps-btn svg { stroke: var(--accent); }
+    </style>
+</head>
+<body>
+
+    <div class="controls-cluster">
+        <button id="gps-btn" class="action-btn">
+            <svg viewBox="0 0 24 24"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg>
+        </button>
+
+        <button id="toggle-view" class="action-btn">
+            <svg id="btn-icon" viewBox="0 0 24 24">
+                <path class="eye-path" d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                <circle class="eye-path" cx="12" cy="12" r="3"></circle>
+                <line class="cross-path" x1="18" y1="6" x2="6" y2="18" style="display:none"></line>
+                <line class="cross-path" x1="6" y1="6" x2="18" y2="18" style="display:none"></line>
+            </svg>
+        </button>
+    </div>
+
+    <div id="map"></div>
+    <div id="panorama"></div>
+
+    <script type="text/javascript">
+        ymaps.ready(init);
+
+        function init() {
+            var center = [55.7539, 37.6208];
+            var panoramaPlayer = null;
+            var isPanoVisible = false;
+
+            var myMap = new ymaps.Map('map', {
+                center: center,
+                zoom: 15,
+                controls: []
+            }, { suppressMapOpenBlock: true });
+
+            const toggleBtn = document.getElementById('toggle-view');
+            const panoDiv = document.getElementById('panorama');
+            const eyePaths = document.querySelectorAll('.eye-path');
+            const crossPaths = document.querySelectorAll('.cross-path');
+
+            function toggleUI(showPano) {
+                isPanoVisible = showPano;
+                if (isPanoVisible) {
+                    panoDiv.classList.add('active');
+                    toggleBtn.classList.add('active');
+                    eyePaths.forEach(p => p.style.display = 'none');
+                    crossPaths.forEach(p => p.style.display = 'block');
+                } else {
+                    panoDiv.classList.remove('active');
+                    toggleBtn.classList.remove('active');
+                    eyePaths.forEach(p => p.style.display = 'block');
+                    crossPaths.forEach(p => p.style.display = 'none');
+                }
+            }
+
+            function setPanorama(coords) {
+                ymaps.panorama.locate(coords).done(function (panoramas) {
+                    if (panoramas.length > 0) {
+                        if (!panoramaPlayer) {
+                            panoramaPlayer = new ymaps.panorama.Player('panorama', panoramas[0], { controls: [] });
+                        } else {
+                            panoramaPlayer.setPanorama(panoramas[0]);
+                        }
+                        toggleUI(true);
+                    } else {
+                        alert("Панорам нет. Нажми на дорогу!");
+                    }
+                });
+            }
+
+            myMap.events.add('click', e => setPanorama(e.get('coords')));
+
+            toggleBtn.onclick = () => {
+                isPanoVisible ? toggleUI(false) : setPanorama(myMap.getCenter());
+            };
+
+            document.getElementById('gps-btn').onclick = () => {
+                ymaps.geolocation.get({ provider: 'browser', mapStateAutoApply: true })
+                    .then(result => {
+                        let c = result.geoObjects.get(0).geometry.getCoordinates();
+                        myMap.setCenter(c, 17);
+                        setPanorama(c);
+                    });
+            };
+        }
+    </script>
+</body>
+</html>
